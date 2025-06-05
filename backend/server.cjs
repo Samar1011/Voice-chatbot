@@ -2,11 +2,20 @@ const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
 const { GoogleGenAI } = require('@google/genai');
+const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
 
 console.log('Starting server initialization...');
 
 const app = express();
 const port = 3001;
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
 
 console.log('Configuring middleware...');
 
@@ -26,7 +35,7 @@ const GEMINI_API_KEY = 'AIzaSyD-WrqBfeJu4tNXY7GVC2rrpTgp097XAQ0';
 const ELEVENLABS_API_KEY = 'sk_36bd4ce3943a4ff5866c49c402cf9922591ca0e7b708c3b8';
 const ELEVENLABS_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
-const ELEVENLABS_STT_MODEL = 'eleven_multilingual_v2';
+const ELEVENLABS_STT_MODEL = 'scribe_v1';
 
 // Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
@@ -40,6 +49,17 @@ function isValidBase64(str) {
   }
 }
 
+// Clean up temporary files
+function cleanupTempFile(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (error) {
+    console.error('Error cleaning up temp file:', error);
+  }
+}
+
 // Verify API keys on startup
 async function verifyAPIKeys() {
   console.log('Verifying API keys...');
@@ -48,7 +68,7 @@ async function verifyAPIKeys() {
   try {
     const elevenLabsResponse = await fetch('https://api.elevenlabs.io/v1/models', {
       headers: {
-        'Content-Type': 'application/json',
+        'Accept': 'application/json',
         'xi-api-key': ELEVENLABS_API_KEY
       }
     });
@@ -95,6 +115,8 @@ app.get('/health', (req, res) => {
 
 app.post('/process-audio', async (req, res) => {
   console.log('Received audio processing request');
+  let tempFilePath = null;
+  
   try {
     const { audio } = req.body;
     
@@ -107,18 +129,25 @@ app.post('/process-audio', async (req, res) => {
       throw new Error('Invalid audio data format. Expected base64 encoded string.');
     }
 
-    // Step 1: Convert audio to text using ElevenLabs Scribe
+    // Step 1: Convert audio to text using ElevenLabs Speech-to-Text
     console.log('Converting speech to text...');
+    const audioBuffer = Buffer.from(audio, 'base64');
+    
+    // Save audio buffer to temporary file
+    tempFilePath = path.join(uploadsDir, `audio_${Date.now()}.webm`);
+    fs.writeFileSync(tempFilePath, audioBuffer);
+    
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(tempFilePath));
+    formData.append('model_id', ELEVENLABS_STT_MODEL);
+
     const transcriptionResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Accept': 'application/json',
         'xi-api-key': ELEVENLABS_API_KEY
       },
-      body: JSON.stringify({
-        audio: audio,
-        model_id: ELEVENLABS_STT_MODEL
-      })
+      body: formData
     }).catch(error => {
       console.error('Error in speech-to-text request:', error);
       throw new Error('Failed to connect to ElevenLabs STT service: ' + error.message);
@@ -176,8 +205,8 @@ app.post('/process-audio', async (req, res) => {
         throw new Error(`Failed to convert text to speech: ${errorText}`);
       }
 
-      const audioBuffer = await ttsResponse.buffer();
-      const audioBase64 = audioBuffer.toString('base64');
+      const responseBuffer = await ttsResponse.buffer();
+      const audioBase64 = responseBuffer.toString('base64');
       console.log('Audio response generated successfully');
 
       res.json({
@@ -195,6 +224,11 @@ app.post('/process-audio', async (req, res) => {
       error: 'Error processing request',
       details: error.message 
     });
+  } finally {
+    // Clean up temporary file
+    if (tempFilePath) {
+      cleanupTempFile(tempFilePath);
+    }
   }
 });
 

@@ -31,8 +31,8 @@ app.use(express.json({ limit: '50mb' }));
 console.log('Initializing APIs...');
 
 // API Keys and Configuration
-const GEMINI_API_KEY = 'AIzaSyD-WrqBfeJu4tNXY7GVC2rrpTgp097XAQ0';
-const ELEVENLABS_API_KEY = 'sk_36bd4ce3943a4ff5866c49c402cf9922591ca0e7b708c3b8';
+const GEMINI_API_KEY = 'mykey1';
+const ELEVENLABS_API_KEY = 'mykey2';
 const ELEVENLABS_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
 const ELEVENLABS_STT_MODEL = 'scribe_v1';
